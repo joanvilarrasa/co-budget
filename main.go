@@ -14,6 +14,10 @@ func main() {
 	http.HandleFunc("/", home)
 	http.HandleFunc("/increment", increment)
 	http.HandleFunc("/datastar.js", datastarJS)
+	http.HandleFunc("/main.css", mainCss)
+
+	http.HandleFunc("/goto/dashboard", goToDashboard)
+	http.HandleFunc("/goto/expenses", goToExpenses)
 
 	fmt.Println("listening on http://localhost:8080")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -21,27 +25,9 @@ func main() {
 	}
 }
 
-func home(w http.ResponseWriter, _ *http.Request) {
+func home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Datastar + Go</title>
-  <script type="module" src="/datastar.js"></script>
-</head>
-<body>
-  <main style="font-family: sans-serif; max-width: 32rem; margin: 3rem auto;">
-    <h1>Datastar counter</h1>
-    <p>A minimal Go + Datastar example.</p>
-    <div data-signals='{"count": 0}'>
-      <p>Count: <strong data-text="$count">0</strong></p>
-      <button data-on:click="@get('/increment')">Increment</button>
-    </div>
-  </main>
-</body>
-</html>`)
+	http.ServeFile(w, r, "home.html")
 }
 
 func increment(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +36,27 @@ func increment(w http.ResponseWriter, r *http.Request) {
 	_ = sse.PatchSignals([]byte(fmt.Sprintf(`{"count": %d}`, next)))
 }
 
+func goToDashboard(w http.ResponseWriter, r *http.Request) {
+	sse := datastar.NewSSE(w, r)
+	sse.PatchElements(
+		`<div id="page">Dashboard Page</div>`,
+	)
+	sse.PatchSignals([]byte(`{page: 'dashboard'}`))
+}
+
+func goToExpenses(w http.ResponseWriter, r *http.Request) {
+	sse := datastar.NewSSE(w, r)
+	sse.PatchElements(
+		`<div id="page">Expenses Page</div>`,
+	)
+	sse.PatchSignals([]byte(`{page: 'expenses'}`))
+}
+
 func datastarJS(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "datastar.js")
+}
+
+func mainCss(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	http.ServeFile(w, r, "main.css")
 }

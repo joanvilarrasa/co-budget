@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Datastar + Go</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/basecoat-css@0.3.11/dist/basecoat.cdn.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/basecoat-css@0.3.11/dist/js/all.min.js" defer></script>
+        <script type="module" src="/datastar.js"></script>
+        <link rel="stylesheet" href="/main.css">
+    </head>
+    <body class="w-screen h-screen flex flex-col overflow-hidden">
+            <nav class="flex gap-2 w-full border-b px-2 py-1 items-center" data-signals="{page: 'dashboard'}">
+                <h1>CO-Budget</h1>
+                <button data-show="$page != 'dashboard'" class="btn-link" style="color: var(--muted-foreground);" data-on:click="@get('/goto/dashboard')">Dashboard</button>
+                <button data-show="$page == 'dashboard'" class="btn-link underline font-bold">Dashboard</button>
+
+                <button data-show="$page != 'expenses'" class="btn-link" style="color: var(--muted-foreground);" data-on:click="@get('/goto/expenses')">Expenses</button>
+                <button data-show="$page == 'expenses'" class="btn-link underline font-bold">Expenses</button>
+                <!-- <button class="btn-link">Accounts</button>
+                <button class="btn-link">Budgets</button>
+                <button class="btn-link">Piggies</button>
+                <button class="btn-link">Tags</button> -->
+            </nav>
+
+            <main id="page">
+                Dashboard page
+            </main>
+<!-- \
+            <main data-signals='{"count": 0}'>
+                <p>Count: <strong data-text="$count">0</strong></p>
+                <button class="btn-secondary" data-on:click="@get('/increment')">Increment</button>
+            </main> -->
+    </body>
+</html>
