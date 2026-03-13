@@ -7,40 +7,57 @@
     </div>
     {{end}}
 
-    <section class="rounded border p-4">
-        <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-700">Create account</h3>
-        <form action="/accounts" method="post"
-              data-on:submit="evt.preventDefault(); @post('/accounts', {contentType: 'form'}).then(() => { evt.target.reset(); })"
-              class="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="flex flex-col gap-1 text-sm">
-                Name
-                <input class="input" type="text" name="name" required />
-            </label>
+    <button type="button" onclick="document.getElementById('create-account-dialog').showModal()" class="btn-outline">New
+        Account</button>
 
-            <label class="flex flex-col gap-1 text-sm">
-                Type
-                <select class="input" name="type" required>
-                    <option value="LTB">LTB</option>
-                    <option value="MTB">MTB</option>
-                    <option value="STB">STB</option>
-                </select>
-            </label>
+    <dialog id="create-account-dialog" class="dialog" aria-labelledby="alert-dialog-title"
+        aria-describedby="alert-dialog-description">
+        <div class="flex flex-col">
 
-            <label class="flex flex-col gap-1 text-sm md:col-span-2">
-                Description
-                <input class="input" type="text" name="description" required />
-            </label>
+            <form action="/accounts" method="post"
+                data-on:submit="evt.preventDefault(); @post('/accounts', {contentType: 'form'}).then(() => { evt.target.reset(); }); document.getElementById('create-account-dialog').close()"
+                class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <header>
+                    <h2 id="alert-dialog-title">Create a new account</h2>
+                    <p id="alert-dialog-description">This will create a new account in the system</p>
+                </header>
 
-            <label class="flex flex-col gap-1 text-sm">
-                Initial balance
-                <input class="input" type="number" name="initial_balance" required step="0.01" />
-            </label>
+                <label class="flex flex-col gap-1 text-sm">
+                    Name
+                    <input class="input" type="text" name="name" required />
+                </label>
 
-            <div class="flex items-end">
-                <button class="btn-primary" type="submit">Create account</button>
-            </div>
-        </form>
-    </section>
+                <label class="flex flex-col gap-1 text-sm">
+                    Type
+                    <select class="input" name="type" required>
+                        <option value="LTB">LTB</option>
+                        <option value="MTB">MTB</option>
+                        <option value="STB">STB</option>
+                    </select>
+                </label>
+
+                <label class="flex flex-col gap-1 text-sm md:col-span-2">
+                    Description
+                    <input class="input" type="text" name="description" required />
+                </label>
+
+                <label class="flex flex-col gap-1 text-sm">
+                    Initial balance
+                    <input class="input" type="number" name="initial_balance" required step="0.01" />
+                </label>
+
+                <div class="flex items-end">
+                    <button class="btn-primary" type="submit">Create account</button>
+                </div>
+                <footer>
+                    <button class="btn-outline"
+                        onclick="document.getElementById('create-account-dialog').close()">Cancel</button>
+                    <button class="btn-primary" type="submit">Create</button>
+                </footer>
+            </form>
+
+        </div>
+    </dialog>
 
     <section class="rounded border p-4">
         <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-700">Existing accounts</h3>
@@ -66,7 +83,8 @@
                         <td class="px-2 py-2">{{.InitialBalance}}</td>
                         <td class="px-2 py-2">{{.CreatedAt}}</td>
                         <td class="px-2 py-2">
-                            <form action="/accounts/delete" method="post" data-on:submit="evt.preventDefault(); @post('/accounts/delete', {contentType: 'form'})">
+                            <form action="/accounts/delete" method="post"
+                                data-on:submit="evt.preventDefault(); @post('/accounts/delete', {contentType: 'form'})">
                                 <input type="hidden" name="id" value="{{.ID}}" />
                                 <button class="btn-link text-red-700" type="submit">Delete</button>
                             </form>
