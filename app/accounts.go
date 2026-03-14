@@ -6,20 +6,15 @@ import (
 )
 
 func Accounts() string {
-	props := Props{
-		"Error": "",
-		"Table": AccountsTable(),
+	accounts, accountsError := data.AccountGetAll(lib.SortConfig{Key: "Name", Direction: "asc"})
+	errorMsg := ""
+	if accountsError != data.AS_Ok {
+		errorMsg = string(accountsError)
 	}
-
-	return lib.ParseHtmlTemplate("./app/accounts/page.html", props)
-}
-
-func AccountsTable() string {
-	accounts, _ := data.AccountGetAll()
-
 	props := Props{
+		"Error":        errorMsg,
 		"AccountsList": accounts,
 	}
 
-	return lib.ParseHtmlTemplate("./app/accounts/table.html", props)
+	return lib.ParseHtmlTemplate("./app/accounts/page.html", props)
 }

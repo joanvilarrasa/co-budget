@@ -1,15 +1,15 @@
 <div id="accounts-page" class="flex flex-1 flex-col gap-4 p-4 overflow-auto">
-    <h2 class="text-lg font-semibold">Accounts</h2>
-
     {{if .Error}}
     <div class="border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
         {{.Error}}
     </div>
     {{end}}
 
-    <div class="flex w-full items-center justify-end">
-        <button type="button" onclick="document.getElementById('create-account-dialog').showModal()"
-            class="btn-primary">New Account</button>
+
+
+    <div class="flex w-full items-center justify-between">
+        <h2 class="text-lg font-semibold">Accounts</h2>
+        <button type="button" onclick="document.getElementById('create-account-dialog').showModal()" class="btn-primary">New Account</button>
     </div>
 
     <dialog id="create-account-dialog" class="dialog">
@@ -37,7 +37,7 @@
                 </div>
                 <div class="flex flex-col gap-2">
                     <label class="label whitespace-nowrap">Initial balance</label>
-                    <input class="input" type="number" name="initial_balance" required step="100.00" />
+                    <input class="input" type="number" name="initial_balance" required step="0.01" />
                 </div>
             </div>
 
@@ -54,8 +54,94 @@
         </form>
     </dialog>
 
+    <dialog id="update-account-dialog" class="dialog">
+        <form action="/accounts/update" method="post"
+            data-on:submit="evt.preventDefault(); @post('/accounts/update', {contentType: 'form'}).then(() => { evt.target.reset(); }); document.getElementById('update-account-dialog').close()"
+            class="flex flex-col gap-2 text-[var(--color-foreground)]">
+            <header class="flex gap-2 w-full">
+                <h2>Update account</h2>
+            </header>
+
+            <input id="update-account-id" type="hidden" name="id" required />
+
+            <div class="flex gap-4">
+                <div class="flex flex-col gap-2 w-[300px]">
+                    <label class="label">Name</label>
+                    <input id="update-account-name" class="input" type="text" name="name" required />
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label class="label">Type</label>
+                    <select id="update-account-type" class="select w-[100px]" name="type" required>
+                        <optgroup label="Type">
+                            <option value="LTB">LTB</option>
+                            <option value="MTB">MTB</option>
+                            <option value="STB">STB</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label class="label whitespace-nowrap">Initial balance</label>
+                    <input id="update-account-balance" class="input" type="number" name="initial_balance" required step="0.01" />
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2">
+                <label class="label">Description</label>
+                <input id="update-account-description" class="input" type="text" name="description" required />
+            </div>
+
+            <footer class="flex w-full items-center justify-end gap-2">
+                <button class="btn-outline" type="button"
+                    onclick="document.getElementById('update-account-dialog').close()">Cancel</button>
+                <button class="btn-primary" type="submit">Update</button>
+            </footer>
+        </form>
+    </dialog>
+
     <section class="rounded border p-4">
         <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-700">Existing accounts</h3>
-        {{.Table}}
+        {{if .AccountsList}}
+        <div id="accounts-table" class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead>
+                    <tr class="border-b">
+                        <th class="px-2 py-2">Name</th>
+                        <th class="px-2 py-2">Description</th>
+                        <th class="px-2 py-2">Type</th>
+                        <th class="px-2 py-2">Initial Balance</th>
+                        <th class="px-2 py-2">Created</th>
+                        <th class="px-2 py-2">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="accounts-table-body">
+                    {{range .AccountsList}}
+                    <tr class="border-b">
+                        <td class="px-2 py-2">{{.Name}}</td>
+                        <td class="px-2 py-2">{{.Description}}</td>
+                        <td class="px-2 py-2">{{.Type}}</td>
+                        <td class="px-2 py-2">{{.InitialBalance}}</td>
+                        <td class="px-2 py-2">{{.CreatedAt}}</td>
+                        <td class="px-2 py-2">
+                            <div class="flex items-center gap-3">
+                                <button class="btn-link" type="button" onclick="openUpdateAccountDialog(this)" data-id="{{.ID}}"
+                                    data-name="{{.Name}}" data-description="{{.Description}}" data-type="{{.Type}}"
+                                    data-initial-balance="{{.InitialBalance}}">Edit</button>
+                                <form action="/accounts/delete" method="post"
+                                    data-on:submit="evt.preventDefault(); @post('/accounts/delete', {contentType: 'form'})">
+                                    <input type="hidden" name="id" value="{{.ID}}" />
+                                    <button class="btn-link text-red-700" type="submit">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div id="accounts-table" class="overflow-x-auto text-sm text-gray-600">
+            No accounts yet.
+        </div>
+        {{end}}
     </section>
 </div>

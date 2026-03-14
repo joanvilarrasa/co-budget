@@ -1,31 +1,66 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>COB</title>
-        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/basecoat-css@0.3.11/dist/basecoat.cdn.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/basecoat-css@0.3.11/dist/js/all.min.js" defer></script>
-        <script type="module" src="/datastar.js"></script>
-        <script>
-            document.addEventListener("DOMContentLoaded", (event) => {
-                setTimeout(() => {
-                    const thebody = document.getElementById("thebody");
-                    thebody.dispatchEvent(new CustomEvent("custompageloaded"));
-                }, 1)
-            });
-        </script>
-        <link rel="stylesheet" href="/main.css">
-    </head>
-    <body id="thebody" class="w-screen h-screen flex flex-col overflow-hidden" data-signals:page="'accounts'" data-on:custompageloaded="@get('/sse')">
-        <nav class="flex gap-2 w-full border-b px-2 py-1 items-center">
-            <h1>CO Budget</h1>
-            <button data-show="$page != 'accounts'" class="btn-link" style="color: var(--muted-foreground);" data-on:click="$page='accounts'">Accounts</button>
-            <button data-show="$page == 'accounts'" class="btn-link underline font-bold">Accounts</button>
-        </nav>
-        <main class="flex flex-1 flex-col" data-show="$page == 'accounts'">
-            {{.AccountsPage}}
-        </main>
-    </body>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>COB</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/basecoat-css@0.3.11/dist/basecoat.cdn.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/basecoat-css@0.3.11/dist/js/all.min.js" defer></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script type="module" src="/datastar.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", (event) => {
+            setTimeout(() => {
+                const thebody = document.getElementById("thebody");
+                thebody.dispatchEvent(new CustomEvent("custompageloaded"));
+            }, 1)
+        });
+        window.matchMedia("(prefers-color-scheme: dark)").addEventListener(
+            "change",
+            (event) => {
+                document.documentElement.classList.toggle("dark", event.matches);
+            }
+        );
+        function toggleTheme() {
+            document.documentElement.classList.toggle("dark");
+            document.documentElement.classList.contains("dark")
+        }
+        function openUpdateAccountDialog(button) {
+            document.getElementById('update-account-id').value = button.dataset.id || '';
+            document.getElementById('update-account-name').value = button.dataset.name || '';
+            document.getElementById('update-account-description').value = button.dataset.description || '';
+            document.getElementById('update-account-type').value = button.dataset.type || 'LTB';
+            document.getElementById('update-account-balance').value = button.dataset.initialBalance || '0';
+            document.getElementById('update-account-dialog').showModal();
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/main.css">
+</head>
+
+<body id="thebody" class="w-screen h-screen flex flex-col overflow-hidden" data-signals:page="'accounts'"
+    data-on:custompageloaded="@get('/sse')">
+    <nav class="flex gap-2 w-full border-b px-2 py-1 items-center">
+        <h1>CO Budget</h1>
+        <button data-show="$page != 'accounts'" class="btn-link" style="color: var(--muted-foreground);"
+            data-on:click="$page='accounts'">Accounts</button>
+        <button data-show="$page == 'accounts'" class="btn-link underline font-bold">Accounts</button>
+        <div class="flex grow gap-2 justify-end">
+            <button data-on:click="toggleTheme()" class="btn-sm-icon-ghost">
+                <i data-lucide="sun"></i> 
+            </button>
+        </div>
+    </nav>
+    <main class="flex flex-1 flex-col" data-show="$page == 'accounts'">
+        {{.AccountsPage}}
+    </main>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+
 </html>

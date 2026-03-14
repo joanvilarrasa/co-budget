@@ -27,92 +27,59 @@ type HttpServerResponseDTO struct {
 
 type HTTPServer struct {
 	mu             sync.Mutex
-	sseConnections map[int64]sseConnection
+	sseConnections map[int64]DatastarSSEStream
 	nextSSEID      int64
 }
 
-type sseConnection struct {
-	stream interface {
-		PatchElements(string, ...datastar.PatchElementOption) error
-	}
+type DatastarSSEStream struct {
+	sse  *datastar.ServerSentEventGenerator
 	done <-chan struct{}
+}
+
+type sseEv struct {
+	eventType string
+	eventData string
 }
 
 func NewHTTPServer() *http.Server {
 	srv := &HTTPServer{
-		sseConnections: map[int64]sseConnection{},
+		sseConnections: map[int64]DatastarSSEStream{},
 	}
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", srv.firstRender)
-	mux.HandleFunc("/sse", srv.sse)
+	// Static files
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, app.Layout())
+	})
+	mux.HandleFunc("/datastar.js", func(w http.ResponseWriter, r *http.Request) {
+		srv.serveStaticFile(w, r, "datastar.js", "javascript")
+	})
+	mux.HandleFunc("/main.css", func(w http.ResponseWriter, r *http.Request) {
+		srv.serveStaticFile(w, r, "main.css", "css")
+	})
+
+	// Setup the sse connection
+	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+		stream := datastar.NewSSE(w, r)
+		srv.mu.Lock()
+		srv.nextSSEID++
+		connectionID := srv.nextSSEID
+		srv.sseConnections[connectionID] = DatastarSSEStream{sse: stream, done: r.Context().Done()}
+		defer delete(srv.sseConnections, connectionID)
+		srv.mu.Unlock()
+
+		<-r.Context().Done()
+	})
+
+	// Actual endpoints
 	mux.HandleFunc("/accounts/new", srv.createAccount)
+	mux.HandleFunc("/accounts/update", srv.updateAccount)
 	mux.HandleFunc("/accounts/delete", srv.deleteAccount)
-	mux.HandleFunc("/datastar.js", datastarJS)
-	mux.HandleFunc("/main.css", mainCss)
 
 	return &http.Server{
 		Addr:    ":8080",
 		Handler: mux,
-	}
-}
-
-func writeJsonResponse(w http.ResponseWriter, statusCode int, response HttpServerResponseDTO) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(response)
-}
-
-func (s *HTTPServer) firstRender(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, app.Layout())
-}
-
-func (s *HTTPServer) sse(w http.ResponseWriter, r *http.Request) {
-	stream := datastar.NewSSE(w, r)
-	connectionID := s.addSSEConnection(stream, r.Context().Done())
-	defer s.removeSSEConnection(connectionID)
-
-	<-r.Context().Done()
-}
-
-func (s *HTTPServer) addSSEConnection(stream interface {
-	PatchElements(string, ...datastar.PatchElementOption) error
-}, done <-chan struct{}) int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.nextSSEID++
-	connectionID := s.nextSSEID
-	s.sseConnections[connectionID] = sseConnection{stream: stream, done: done}
-
-	return connectionID
-}
-
-func (s *HTTPServer) removeSSEConnection(connectionID int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.sseConnections, connectionID)
-}
-
-func (s *HTTPServer) broadcastToSSEConnections(message string) {
-	s.mu.Lock()
-	activeConnections := make([]sseConnection, 0, len(s.sseConnections))
-
-	for connectionID, connection := range s.sseConnections {
-		select {
-		case <-connection.done:
-			delete(s.sseConnections, connectionID)
-		default:
-			activeConnections = append(activeConnections, connection)
-		}
-	}
-
-	s.mu.Unlock()
-
-	for _, connection := range activeConnections {
-		_ = connection.stream.PatchElements(message)
 	}
 }
 
@@ -134,7 +101,7 @@ func (s *HTTPServer) createAccount(w http.ResponseWriter, r *http.Request) {
 	createRes, _ := data.AccountCreate(nameStr, descriptionStr, initialBalanceF64, accountTypeStr)
 	switch createRes {
 	case data.AS_Ok:
-		s.broadcastToSSEConnections(app.AccountsTable())
+		s.broadcastSSE([]sseEv{{eventType: "sseEvPatchElements", eventData: app.Accounts()}})
 		writeJsonResponse(w, http.StatusAccepted, HttpServerResponseDTO{
 			Succes:  true,
 			Message: "Created successfully",
@@ -176,7 +143,7 @@ func (s *HTTPServer) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	deleteRes := data.AccountDelete(id)
 	switch deleteRes {
 	case data.AS_Ok:
-		s.broadcastToSSEConnections(app.AccountsTable())
+		s.broadcastSSE([]sseEv{{eventType: "sseEvPatchElements", eventData: app.Accounts()}})
 		writeJsonResponse(w, http.StatusAccepted, HttpServerResponseDTO{
 			Succes:  true,
 			Message: "Deleted successfully",
@@ -197,8 +164,89 @@ func (s *HTTPServer) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *HTTPServer) updateAccount(w http.ResponseWriter, r *http.Request) {
+	fields := map[string]HttpPostFieldDataType{
+		"id":              HttpPostFieldTypeString,
+		"name":            HttpPostFieldTypeString,
+		"description":     HttpPostFieldTypeString,
+		"type":            HttpPostFieldTypeString,
+		"initial_balance": HttpPostFieldTypeF64,
+	}
+	postData, ok := parsePostRequestData(w, r, fields)
+	if !ok {
+		return
+	}
+
+	idStr, _ := postData["id"].(string)
+	id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+	if err != nil {
+		writeJsonResponse(w, http.StatusBadRequest, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Invalid account ID",
+		})
+		return
+	}
+
+	nameStr, _ := postData["name"].(string)
+	descriptionStr, _ := postData["description"].(string)
+	accountTypeStr, _ := postData["type"].(string)
+	initialBalanceF64, _ := postData["initial_balance"].(float64)
+
+	updateRes, _ := data.AccountUpdate(id, nameStr, descriptionStr, initialBalanceF64, accountTypeStr)
+	switch updateRes {
+	case data.AS_Ok:
+		s.broadcastSSE([]sseEv{{eventType: "sseEvPatchElements", eventData: app.Accounts()}})
+		writeJsonResponse(w, http.StatusAccepted, HttpServerResponseDTO{
+			Succes:  true,
+			Message: "Updated successfully",
+		})
+		return
+	case data.AS_AccountNotFound:
+		writeJsonResponse(w, http.StatusNotFound, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Account not found",
+		})
+		return
+	case data.AS_CreateBadInput:
+		writeJsonResponse(w, http.StatusBadRequest, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Invalid input",
+		})
+		return
+	default:
+		writeJsonResponse(w, http.StatusInternalServerError, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Some uncontrolled error has ocurred",
+		})
+		return
+	}
+}
+
+func (s *HTTPServer) broadcastSSE(events []sseEv) {
+	s.mu.Lock()
+	activeConnections := make([]DatastarSSEStream, 0, len(s.sseConnections))
+	for connectionID, connection := range s.sseConnections {
+		select {
+		case <-connection.done:
+			delete(s.sseConnections, connectionID)
+		default:
+			activeConnections = append(activeConnections, connection)
+		}
+	}
+	s.mu.Unlock()
+
+	for _, connection := range activeConnections {
+		for _, event := range events {
+			if event.eventType == "sseEvPatchElements" {
+				_ = connection.sse.PatchElements(event.eventData)
+			} else {
+				_ = connection.sse.PatchSignals([]byte(event.eventData))
+			}
+		}
+	}
+}
+
 func parsePostRequestData(w http.ResponseWriter, r *http.Request, fields map[string]HttpPostFieldDataType) (map[string]any, bool) {
-	// Add some basic logging
 	if r.Method != http.MethodPost {
 		writeJsonResponse(w, http.StatusMethodNotAllowed, HttpServerResponseDTO{
 			Succes:  false,
@@ -206,7 +254,6 @@ func parsePostRequestData(w http.ResponseWriter, r *http.Request, fields map[str
 		})
 		return map[string]any{}, false
 	}
-
 	if parseErr := r.ParseForm(); parseErr != nil {
 		writeJsonResponse(w, http.StatusBadRequest, HttpServerResponseDTO{
 			Succes:  false,
@@ -234,15 +281,21 @@ func parsePostRequestData(w http.ResponseWriter, r *http.Request, fields map[str
 			result[field] = value
 		}
 	}
-
 	return result, true
 }
 
-func datastarJS(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "datastar.js")
+func writeJsonResponse(w http.ResponseWriter, statusCode int, response HttpServerResponseDTO) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
-func mainCss(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/css; charset=utf-8")
-	http.ServeFile(w, r, "main.css")
+func (s *HTTPServer) serveStaticFile(w http.ResponseWriter, r *http.Request, filepath string, filetype string) {
+	switch filetype {
+	case "html":
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	case "css":
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	}
+	http.ServeFile(w, r, filepath)
 }

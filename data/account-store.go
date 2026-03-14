@@ -1,10 +1,12 @@
 package data
 
 import (
+	"co-budget/lib"
 	"context"
 	"database/sql"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -276,7 +278,7 @@ func AccountDelete(id int64) AccountStoreResponse {
 	return AS_Ok
 }
 
-func AccountGetAll() ([]Account, AccountStoreResponse) {
+func AccountGetAll(sortConfig ...lib.SortConfig) ([]Account, AccountStoreResponse) {
 	accounts := make([]Account, 0, len(store.accounts))
 	log.Printf("[account-store] AccountGetAll init")
 	if isActive := store.isAccountStoreActive(); isActive != AS_Ok {
@@ -285,6 +287,42 @@ func AccountGetAll() ([]Account, AccountStoreResponse) {
 	}
 	for _, acc := range store.accounts {
 		accounts = append(accounts, acc)
+	}
+
+	// Apply sorting if a SortConfig is provided
+	if len(sortConfig) > 0 {
+		sc := sortConfig[0]
+		sort.Slice(accounts, func(i, j int) bool {
+			switch sc.Key {
+			case "Name":
+				if sc.Direction == lib.SortDesc {
+					return accounts[i].Name > accounts[j].Name
+				}
+				return accounts[i].Name < accounts[j].Name
+			case "CreatedAt":
+				if sc.Direction == lib.SortDesc {
+					return accounts[i].CreatedAt > accounts[j].CreatedAt
+				}
+				return accounts[i].CreatedAt < accounts[j].CreatedAt
+			case "InitialBalance":
+				if sc.Direction == lib.SortDesc {
+					return accounts[i].InitialBalance > accounts[j].InitialBalance
+				}
+				return accounts[i].InitialBalance < accounts[j].InitialBalance
+			case "Type":
+				if sc.Direction == lib.SortDesc {
+					return accounts[i].Type > accounts[j].Type
+				}
+				return accounts[i].Type < accounts[j].Type
+			case "CurrentBalance":
+				if sc.Direction == lib.SortDesc {
+					return accounts[i].CurrentBalance > accounts[j].CurrentBalance
+				}
+				return accounts[i].CurrentBalance < accounts[j].CurrentBalance
+			default:
+				return accounts[i].ID < accounts[j].ID // default sort by ID ascending
+			}
+		})
 	}
 
 	log.Printf("[account-store] AccountGetAll end ok")
