@@ -1,0 +1,38 @@
+{{if .AccountsList}}
+<div id="accounts-table" class="overflow-x-auto">
+    <table class="w-full text-left text-sm">
+        <thead>
+            <tr class="border-b">
+                <th class="px-2 py-2">Name</th>
+                <th class="px-2 py-2">Description</th>
+                <th class="px-2 py-2">Type</th>
+                <th class="px-2 py-2">Initial Balance</th>
+                <th class="px-2 py-2">Created</th>
+                <th class="px-2 py-2">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="accounts-table-body">
+            {{range .AccountsList}}
+            <tr class="border-b">
+                <td class="px-2 py-2">{{.Name}}</td>
+                <td class="px-2 py-2">{{.Description}}</td>
+                <td class="px-2 py-2">{{.Type}}</td>
+                <td class="px-2 py-2">{{.InitialBalance}}</td>
+                <td class="px-2 py-2">{{.CreatedAt}}</td>
+                <td class="px-2 py-2">
+                    <form action="/accounts/delete" method="post"
+                        data-on:submit="evt.preventDefault(); @post('/accounts/delete', {contentType: 'form'})">
+                        <input type="hidden" name="id" value="{{.ID}}" />
+                        <button class="btn-link text-red-700" type="submit">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div id="accounts-table" class="overflow-x-auto text-sm text-gray-600">
+    No accounts yet.
+</div>
+{{end}}

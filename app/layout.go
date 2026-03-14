@@ -2,23 +2,15 @@ package app
 
 import "co-budget/lib"
 
-func navHeader() string {
-	return "CO-Budget"
-}
+type Props map[string]interface{}
 
 type HomeProps struct {
-	DashboardPage string
-	AccountsPage  string
-	BudgetsPage   string
-	ExpensesPage  string
+	AccountsPage string
 }
 
 func Layout() string {
-	layoutdata := HomeProps{
-		DashboardPage: Dashboard(),
-		AccountsPage:  Accounts(),
-		BudgetsPage:   Budgets(),
-		ExpensesPage:  Expenses(),
+	layoutdata := Props{
+		"AccountsPage": Accounts(),
 	}
 	return lib.ParseHtmlTemplate("./app/layout.html", layoutdata)
 }

@@ -9,9 +9,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/starfederation/datastar-go/datastar"
+)
+
+type HttpPostFieldDataType string
+
+const (
+	HttpPostFieldTypeString HttpPostFieldDataType = "HttpPostFieldTypeString"
+	HttpPostFieldTypeF64    HttpPostFieldDataType = "HttpPostFieldTypeF64"
 )
 
 type HttpServerResponseDTO struct {
@@ -38,14 +44,9 @@ func NewHTTPServer() *http.Server {
 	}
 	mux := http.NewServeMux()
 
-	go srv.broadcastSSEStatus()
-
 	mux.HandleFunc("/", srv.firstRender)
 	mux.HandleFunc("/sse", srv.sse)
-	mux.HandleFunc("/accounts", func(w http.ResponseWriter, r *http.Request) {
-		statusCode, response := srv.createAccount(w, r)
-		writeJsonResponse(w, statusCode, response)
-	})
+	mux.HandleFunc("/accounts/new", srv.createAccount)
 	mux.HandleFunc("/accounts/delete", srv.deleteAccount)
 	mux.HandleFunc("/datastar.js", datastarJS)
 	mux.HandleFunc("/main.css", mainCss)
@@ -95,15 +96,6 @@ func (s *HTTPServer) removeSSEConnection(connectionID int64) {
 	delete(s.sseConnections, connectionID)
 }
 
-func (s *HTTPServer) broadcastSSEStatus() {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for t := range ticker.C {
-		s.broadcastToSSEConnections(fmt.Sprintf(`<div id="sse-status">SSE Status ON %s</div>`, t.Format("15:04:05")))
-	}
-}
-
 func (s *HTTPServer) broadcastToSSEConnections(message string) {
 	s.mu.Lock()
 	activeConnections := make([]sseConnection, 0, len(s.sseConnections))
@@ -124,90 +116,126 @@ func (s *HTTPServer) broadcastToSSEConnections(message string) {
 	}
 }
 
-func (s *HTTPServer) createAccount(w http.ResponseWriter, r *http.Request) (int, HttpServerResponseDTO) {
-	if r.Method != http.MethodPost {
-		return http.StatusMethodNotAllowed, HttpServerResponseDTO{
-			Succes:  false,
-			Message: "method_not_allowed",
-		}
+func (s *HTTPServer) createAccount(w http.ResponseWriter, r *http.Request) {
+	fields := map[string]HttpPostFieldDataType{
+		"name":            HttpPostFieldTypeString,
+		"description":     HttpPostFieldTypeString,
+		"type":            HttpPostFieldTypeString,
+		"initial_balance": HttpPostFieldTypeF64,
 	}
-
-	if parseErr := r.ParseForm(); parseErr != nil {
-		return http.StatusBadRequest, HttpServerResponseDTO{
-			Succes:  false,
-			Message: "The form body is invalid",
-		}
+	postData, postDataParseErr := parsePostRequestData(w, r, fields)
+	if !postDataParseErr {
+		return
 	}
-
-	name := strings.TrimSpace(r.FormValue("name"))
-	description := strings.TrimSpace(r.FormValue("description"))
-	accountType := strings.TrimSpace(r.FormValue("type"))
-	balanceRaw := strings.TrimSpace(r.FormValue("initial_balance"))
-
-	if name == "" || description == "" || balanceRaw == "" {
-		return http.StatusBadRequest, HttpServerResponseDTO{
-			Succes:  false,
-			Message: "Name, description and initial balance are required fields",
-		}
-	}
-
-	if !isValidAccountType(accountType) {
-		return http.StatusBadRequest, HttpServerResponseDTO{
-			Succes:  false,
-			Message: "The account type is invalid",
-		}
-	}
-
-	initialBalance, parseErr := strconv.ParseFloat(balanceRaw, 64)
-	if parseErr != nil {
-		return http.StatusBadRequest, HttpServerResponseDTO{
-			Succes:  false,
-			Message: "Initial balance must be a number",
-		}
-	}
-
-	createRes := data.AccountCreate(name, description, initialBalance, accountType)
+	nameStr, _ := postData["name"].(string)
+	descriptionStr, _ := postData["description"].(string)
+	accountTypeStr, _ := postData["type"].(string)
+	initialBalanceF64, _ := postData["initial_balance"].(float64)
+	createRes, _ := data.AccountCreate(nameStr, descriptionStr, initialBalanceF64, accountTypeStr)
 	switch createRes {
 	case data.AS_Ok:
-		s.broadcastToSSEConnections(app.Accounts())
-		return http.StatusAccepted, HttpServerResponseDTO{
+		s.broadcastToSSEConnections(app.AccountsTable())
+		writeJsonResponse(w, http.StatusAccepted, HttpServerResponseDTO{
 			Succes:  true,
 			Message: "Created successfully",
-		}
-
+		})
+		return
+	case data.AS_CreateBadInput:
+		writeJsonResponse(w, http.StatusBadRequest, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Invalid input",
+		})
+		return
 	default:
-		return http.StatusInternalServerError, HttpServerResponseDTO{
+		writeJsonResponse(w, http.StatusInternalServerError, HttpServerResponseDTO{
 			Succes:  false,
 			Message: "Some uncontrolled error has ocurred",
-		}
+		})
+		return
 	}
-
 }
 
 func (s *HTTPServer) deleteAccount(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	fields := map[string]HttpPostFieldDataType{
+		"id": HttpPostFieldTypeString, // parse as string first, then to int64
+	}
+	postData, ok := parsePostRequestData(w, r, fields)
+	if !ok {
 		return
+	}
+	idStr, _ := postData["id"].(string)
+	id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+	if err != nil {
+		writeJsonResponse(w, http.StatusBadRequest, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Invalid account ID",
+		})
+		return
+	}
+
+	deleteRes := data.AccountDelete(id)
+	switch deleteRes {
+	case data.AS_Ok:
+		s.broadcastToSSEConnections(app.AccountsTable())
+		writeJsonResponse(w, http.StatusAccepted, HttpServerResponseDTO{
+			Succes:  true,
+			Message: "Deleted successfully",
+		})
+		return
+	case data.AS_AccountNotFound:
+		writeJsonResponse(w, http.StatusNotFound, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Account not found",
+		})
+		return
+	default:
+		writeJsonResponse(w, http.StatusInternalServerError, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "Some uncontrolled error has ocurred",
+		})
+		return
+	}
+}
+
+func parsePostRequestData(w http.ResponseWriter, r *http.Request, fields map[string]HttpPostFieldDataType) (map[string]any, bool) {
+	// Add some basic logging
+	if r.Method != http.MethodPost {
+		writeJsonResponse(w, http.StatusMethodNotAllowed, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "method_not_allowed",
+		})
+		return map[string]any{}, false
 	}
 
 	if parseErr := r.ParseForm(); parseErr != nil {
-		s.patchAccounts(w, r)
-		return
+		writeJsonResponse(w, http.StatusBadRequest, HttpServerResponseDTO{
+			Succes:  false,
+			Message: "The form body is invalid",
+		})
+		return map[string]any{}, false
+	}
+	result := map[string]any{}
+	for field, fieldType := range fields {
+		value := strings.TrimSpace(r.FormValue(field))
+		switch fieldType {
+		case HttpPostFieldTypeString:
+			result[field] = value
+		case HttpPostFieldTypeF64:
+			v, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				writeJsonResponse(w, http.StatusBadRequest, HttpServerResponseDTO{
+					Succes:  false,
+					Message: fmt.Sprintf("%s must be a float64", field),
+				})
+				return map[string]any{}, false
+			}
+			result[field] = v
+		default:
+			result[field] = value
+		}
 	}
 
-	idRaw := strings.TrimSpace(r.FormValue("id"))
-	id, parseErr := strconv.ParseInt(idRaw, 10, 64)
-	if parseErr != nil {
-		s.patchAccounts(w, r)
-		return
-	}
-
-	if deleteRes := data.AccountDelete(id); deleteRes != data.AS_Ok {
-		s.patchAccounts(w, r)
-		return
-	}
-
-	s.broadcastToSSEConnections(app.Accounts())
+	return result, true
 }
 
 func datastarJS(w http.ResponseWriter, r *http.Request) {
@@ -217,22 +245,4 @@ func datastarJS(w http.ResponseWriter, r *http.Request) {
 func mainCss(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	http.ServeFile(w, r, "main.css")
-}
-
-func sanitizePage(page string) string {
-	switch page {
-	case "accounts", "dashboard", "expenses", "budgets":
-		return page
-	default:
-		return "dashboard"
-	}
-}
-
-func isValidAccountType(accountType string) bool {
-	return accountType == "LTB" || accountType == "MTB" || accountType == "STB"
-}
-
-func (s *HTTPServer) patchAccounts(w http.ResponseWriter, r *http.Request) {
-	sse := datastar.NewSSE(w, r)
-	sse.PatchElements(app.Accounts())
 }

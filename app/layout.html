@@ -18,34 +18,14 @@
         </script>
         <link rel="stylesheet" href="/main.css">
     </head>
-
-    <body id="thebody" class="w-screen h-screen flex flex-col overflow-hidden" data-on:custompageloaded="console.log('I am alive');@get('/sse')">
+    <body id="thebody" class="w-screen h-screen flex flex-col overflow-hidden" data-signals:page="'accounts'" data-on:custompageloaded="@get('/sse')">
         <nav class="flex gap-2 w-full border-b px-2 py-1 items-center">
             <h1>CO Budget</h1>
-            <button data-show="$page != 'dashboard'" class="btn-link" style="color: var(--muted-foreground);"
-                data-on:click="$page='dashboard'">Dashboard</button>
-            <button data-show="$page == 'dashboard'" class="btn-link underline font-bold">Dashboard</button>
-            <button data-show="$page != 'expenses'" class="btn-link" style="color: var(--muted-foreground);"
-                data-on:click="$page='expenses'">Expenses</button>
-            <button data-show="$page == 'expenses'" class="btn-link underline font-bold">Expenses</button>
-            <button data-show="$page != 'accounts'" class="btn-link" style="color: var(--muted-foreground);"
-                data-on:click="$page='accounts'">Accounts</button>
+            <button data-show="$page != 'accounts'" class="btn-link" style="color: var(--muted-foreground);" data-on:click="$page='accounts'">Accounts</button>
             <button data-show="$page == 'accounts'" class="btn-link underline font-bold">Accounts</button>
-            <button data-show="$page != 'budgets'" class="btn-link" style="color: var(--muted-foreground);"
-                data-on:click="$page='budgets'">Budgets</button>
-            <button data-show="$page == 'budgets'" class="btn-link underline font-bold">Budgets</button>
         </nav>
-        <main class="flex flex-1 flex-col" data-show="$page == 'dashboard'">
-            {{.DashboardPage}}
-        </main>
-        <main class="flex flex-1 flex-col" data-show="$page == 'expenses'">
-            {{.ExpensesPage}}
-        </main>
         <main class="flex flex-1 flex-col" data-show="$page == 'accounts'">
             {{.AccountsPage}}
-        </main>
-        <main class="flex flex-1 flex-col" data-show="$page == 'budgets'">
-            {{.BudgetsPage}}
         </main>
     </body>
 </html>

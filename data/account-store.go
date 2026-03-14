@@ -10,13 +10,34 @@ import (
 	"time"
 )
 
+type AccountType string
+
+const (
+	LTB AccountType = "LTB"
+	MTB AccountType = "MTB"
+	STB AccountType = "STB"
+)
+
+func parseAccountType(s string) (AccountType, bool) {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case string(LTB):
+		return LTB, true
+	case string(MTB):
+		return MTB, true
+	case string(STB):
+		return STB, true
+	default:
+		return "", false
+	}
+}
+
 type Account struct {
 	ID             int64
 	Name           string
 	Description    string
 	CreatedAt      string
 	InitialBalance float64
-	Type           string
+	Type           AccountType
 	CurrentBalance float64
 }
 
@@ -28,6 +49,7 @@ const (
 	AS_DBError            AccountStoreResponse = "AS_DBError"
 	AS_AccountDisappeared AccountStoreResponse = "AS_AccountDisappeared"
 	AS_AccountNotFound    AccountStoreResponse = "AS_AccountNotFound"
+	AS_CreateBadInput     AccountStoreResponse = "AS_CreateBadInput"
 	AS_Ok                 AccountStoreResponse = "AS_Ok"
 )
 
@@ -120,16 +142,26 @@ func queryAllAccountsFromDB() AccountStoreResponse {
 	return AS_Ok
 }
 
-func AccountCreate(name string, description string, initialBalance float64, accountType string) AccountStoreResponse {
+func AccountCreate(acName string, acDesc string, acInitBalance float64, acType string) (AccountStoreResponse, string) {
 	log.Printf("[account-store] AccountCreate init")
 	if isActive := store.isAccountStoreActive(); isActive != AS_Ok {
 		log.Printf("[account-store] failed to create account because %s", isActive)
-		return isActive
+		return isActive, fmt.Sprintf("failed to create account because %s", isActive)
 	}
-	// TODO(jv): Improve this for security
-	name = sanitizeAccountText(name)
-	description = sanitizeAccountText(description)
-	accountType = sanitizeAccountText(accountType)
+
+	if acName == "" {
+		return AS_CreateBadInput, "Name cannot be empty"
+	}
+
+	name := strings.TrimSpace(acName)
+	description := strings.TrimSpace(acDesc)
+	initialBalance := acInitBalance
+	accountType, wasCorrectAccountType := parseAccountType(acType)
+
+	if !wasCorrectAccountType {
+		log.Printf("[account-store] The account type was not correct %s", acType)
+	}
+
 	result, err := store.db.ExecContext(
 		store.ctx,
 		`INSERT INTO accounts(name, description, initial_balance, type) VALUES(?, ?, ?, ?)`,
@@ -140,12 +172,12 @@ func AccountCreate(name string, description string, initialBalance float64, acco
 	)
 	if err != nil {
 		log.Printf("[account-store] failed to create account because %s", err)
-		return AS_DBError
+		return AS_DBError, fmt.Sprintf("failed to create account because %s", err)
 	}
 	id, idErr := result.LastInsertId()
 	if idErr != nil {
 		log.Printf("[account-store] failed to create account because %s", err)
-		return AS_DBError
+		return AS_DBError, fmt.Sprintf("failed to create account: %s", idErr)
 	}
 	account := Account{
 		ID:             id,
@@ -161,48 +193,64 @@ func AccountCreate(name string, description string, initialBalance float64, acco
 	store.mu.Unlock()
 
 	log.Printf("[account-store] AccountCreate end ok")
-	return AS_Ok
+	return AS_Ok, ""
 }
 
-func AccountUpdate(id int64, name string, description string, initialBalance float64, accountType string) AccountStoreResponse {
+func AccountUpdate(id int64, acName string, acDescription string, initialBalance float64, acType string) (AccountStoreResponse, string) {
 	log.Printf("[account-store] AccountUpdate init")
 	if isActive := store.isAccountStoreActive(); isActive != AS_Ok {
 		log.Printf("[account-store] failed to update account because %s", isActive)
-		return isActive
+		return isActive, fmt.Sprintf("failed to create account because %s", isActive)
 	}
-	// TODO(jv): Improve this for security
-	name = sanitizeAccountText(name)
-	description = sanitizeAccountText(description)
-	accountType = sanitizeAccountText(accountType)
+
+	// Load existing account to fill in missing/optional fields
+	store.mu.Lock()
+	account, ok := store.accounts[id]
+	store.mu.Unlock()
+	if !ok {
+		log.Printf("[account-store] failed to update account because account not found")
+		return AS_AccountNotFound, "Account not found"
+	}
+
+	updatedName := strings.TrimSpace(acName)
+	updatedDescription := strings.TrimSpace(acDescription)
+	updatedInitialBalance := initialBalance
+	updatedType, wasCorrectAccountType := parseAccountType(acType)
+	if !wasCorrectAccountType {
+		log.Printf("[account-store] The account type was not correct %s", acType)
+	}
+
 	_, err := store.db.ExecContext(
 		store.ctx,
 		`UPDATE accounts SET name = ?, description = ?, initial_balance = ?, type = ? WHERE id = ?`,
-		name,
-		description,
-		initialBalance,
-		accountType,
+		updatedName,
+		updatedDescription,
+		updatedInitialBalance,
+		updatedType,
 		id,
 	)
 	if err != nil {
 		log.Printf("[account-store] failed to update account because %s", err)
-		return AS_DBError
+		return AS_DBError, fmt.Sprintf("failed to update account: %s", err)
 	}
+
+	// Update in-memory account
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	account, ok := store.accounts[id]
+	account, ok = store.accounts[id]
 	if ok {
-		account.Name = name
-		account.Description = description
-		account.InitialBalance = initialBalance
-		account.Type = accountType
+		account.Name = updatedName
+		account.Description = updatedDescription
+		account.InitialBalance = updatedInitialBalance
+		account.Type = updatedType
 		store.accounts[id] = account
 	} else {
-		log.Printf("[account-store] failed to update account because %s", err)
-		return AS_AccountDisappeared
+		log.Printf("[account-store] failed to update account because disappeared (after db update)")
+		return AS_AccountDisappeared, "Account disappeared after DB update"
 	}
 
 	log.Printf("[account-store] AccountUpdate end ok")
-	return AS_Ok
+	return AS_Ok, ""
 }
 
 func AccountDelete(id int64) AccountStoreResponse {
@@ -256,9 +304,4 @@ func AccountGetOne(id int64) (*Account, AccountStoreResponse) {
 	}
 	log.Printf("[account-store] failed to get one account because account not found")
 	return nil, AS_AccountNotFound
-}
-
-func sanitizeAccountText(value string) string {
-	value = strings.TrimSpace(value)
-	return strings.ReplaceAll(value, "\x00", "")
 }
